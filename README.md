@@ -251,6 +251,8 @@ Cột `ma_dienke` trong workbook được lưu và hiển thị riêng dưới d
 
 - Có thể cập nhật lịch thủ công trong Dashboard hoặc nhập file lịch tải từ nguồn EVNSPC.
 - Nếu cấu hình `EVNSPC_PUBLIC_API_URL`, backend kiểm tra mỗi ngày lúc 06:00 giờ Việt Nam và có nút cập nhật ngay. Lỗi kết nối/định dạng được ghi trong Lịch sử cập nhật; dữ liệu cũ được giữ nguyên.
+- Trong mục Lịch cúp điện và Trạm BTS bị ảnh hưởng, nút **Cập nhật hôm nay**/**Cập nhật tuần này** sẽ thử đồng bộ nguồn API được cấu hình rồi lọc kết quả tương ứng. Nếu chưa cấu hình API, thao tác báo lỗi nguồn và chỉ có thể xem lịch đã nhập/lưu; không tự tạo lịch mới.
+- Có thể tìm trạm bằng mã BTS hoặc mã khách hàng ở các bảng lịch/ảnh hưởng. Mã khách hàng chỉ dùng để tìm trong danh sách trạm và đối chiếu với lịch nguồn; hệ thống chưa tự gửi/truy vấn từng mã trên EVNSPC vì chưa xác minh được API công khai được phép hỗ trợ cách tra cứu đó. Khi có API được EVNSPC cho phép, cần cấu hình adapter tương ứng mới có thể tự động tra từng mã.
 - Hệ thống phát hiện lịch mới, thay đổi (khi nguồn giữ nguyên ID), lịch API bị hủy (chỉ với snapshot đầy đủ `complete: true`) và lịch sắp bắt đầu.
 - Đối chiếu “Đã xác nhận” chỉ khi phạm vi ghi rõ mã BTS; khớp phường/xã và đường chỉ là “Khớp khu vực”, không khẳng định trạm chắc chắn mất điện. Workbook ban đầu thiếu địa chỉ hành chính nên cần bổ sung địa chỉ để tăng độ hữu ích.
 - Bản đồ dùng tọa độ workbook và tile OpenStreetMap; cần kết nối Internet để tải thư viện/lớp bản đồ. Trạm không có tọa độ không xuất hiện trên bản đồ.

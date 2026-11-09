@@ -6,6 +6,7 @@ const state = {
   matches: [],
   history: [],
   alerts: [],
+  outagePeriod: 'week',
   map: null
 };
 
@@ -30,6 +31,25 @@ const localDate = value => value ? new Date(value).toLocaleString('vi-VN', {
 const localDay = value => value ? new Date(value).toLocaleDateString('vi-VN', {
   timeZone: 'Asia/Ho_Chi_Minh', weekday: 'short', day: '2-digit', month: '2-digit'
 }) : '—';
+const vietnamDateKey = date => {
+  const parts = new Intl.DateTimeFormat('en', {
+    timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit'
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
+};
+const periodBounds = period => {
+  const today = vietnamDateKey(new Date());
+  if (period === 'today') return [today, today];
+  if (period !== 'week') return ['', ''];
+  const lastDay = new Date(`${today}T00:00:00Z`);
+  lastDay.setUTCDate(lastDay.getUTCDate() + 6);
+  return [today, lastDay.toISOString().slice(0, 10)];
+};
+const inSelectedPeriod = outage => {
+  const [start, end] = periodBounds(state.outagePeriod);
+  return !start || (outage.start_at.slice(0, 10) <= end && outage.end_at.slice(0, 10) >= start);
+};
 const timeOnly = value => value ? new Date(value).toLocaleTimeString('vi-VN', {
   timeZone: 'Asia/Ho_Chi_Minh', hour: '2-digit', minute: '2-digit'
 }) : '—';
@@ -170,7 +190,7 @@ function outageTableRows(outages, matches) {
       ? `<a class="source-url" href="${esc(outage.source_url)}" target="_blank" rel="noopener noreferrer">${esc(outage.source)}</a>`
       : esc(outage.source);
     return `<tr>
-      <td class="code">${esc(found?.station.code || '—')}<span class="cell-secondary">${esc(found?.station.name || 'Chưa ghép trạm')}</span></td>
+      <td class="code">${esc(found?.station.code || '—')}<span class="cell-secondary">${esc(found?.station.name || 'Chưa ghép trạm')}${found?.station.customer_code ? ` · KH ${esc(found.station.customer_code)}` : ''}</span></td>
       <td>${esc(outage.ward || outage.province || 'Đồng Nai')}</td>
       <td title="${esc(outage.affected_scope)}">${esc(outage.street || outage.affected_scope)}</td>
       <td class="nowrap">${localDay(outage.start_at)}</td><td class="nowrap">${timeOnly(outage.start_at)}</td><td class="nowrap">${timeOnly(outage.end_at)}</td>
@@ -187,13 +207,15 @@ function renderOutages() {
     const date = $('#outage-date')?.value || '';
     const ward = $('#outage-ward')?.value || '';
     const code = ($('#outage-code')?.value || '').trim().toLowerCase();
-    const station = state.stations.find(item => item.code.toLowerCase().includes(code));
-    const outageMatchesCode = !code || state.matches.some(item => item.outage.id === outage.id && item.station.code.toLowerCase().includes(code));
-    return (!date || outage.start_at.slice(0, 10) === date) && (!ward || outage.ward === ward) && (!code || (station && outageMatchesCode));
+    const outageMatchesCode = !code || state.matches.some(item => item.outage.id === outage.id &&
+      [item.station.code, item.station.customer_code].some(value => String(value || '').toLowerCase().includes(code)));
+    return inSelectedPeriod(outage) && (!date || outage.start_at.slice(0, 10) === date) &&
+      (!ward || outage.ward === ward) && outageMatchesCode;
   });
-  return `${pageHeading('Lịch cúp điện · 7 ngày', 'Đối chiếu lịch đã nhập với danh sách BTS. Phạm vi ảnh hưởng hiển thị nguyên văn.', `<button class="button button-primary" data-page="data">⇧&nbsp; Nhập lịch</button>`)}
+  const periodActions = `<button class="button ${state.outagePeriod === 'today' ? 'button-primary' : 'button-secondary'}" data-action="scan-period" data-period="today">Cập nhật hôm nay</button><button class="button ${state.outagePeriod === 'week' ? 'button-primary' : 'button-secondary'}" data-action="scan-period" data-period="week">Cập nhật tuần này</button>`;
+  return `${pageHeading('Lịch cúp điện · 7 ngày', 'Cập nhật nguồn lịch được phép, rồi lọc các lịch và trạm khớp theo thời gian. Mã khách hàng chỉ dùng để tìm trong dữ liệu đã có.', `${periodActions}<button class="button button-muted" data-page="data">⇧&nbsp; Nhập lịch</button>`)}
     ${state.outages.length ? '' : '<div class="inline-alert info"><span>ⓘ</span><div>Chưa có lịch chính thức được nhập cho 7 ngày tới. Không có dữ liệu lịch giả.</div></div>'}
-    <div class="filters"><span class="filter-label">Lọc theo</span><select id="outage-date" class="filter-select"><option value="">Tất cả ngày</option>${days.map(day => `<option value="${esc(day)}">${new Date(`${day}T00:00:00`).toLocaleDateString('vi-VN')}</option>`).join('')}</select><select id="outage-ward" class="filter-select"><option value="">Tất cả phường/xã</option>${wards.map(ward => `<option value="${esc(ward)}">${esc(ward)}</option>`).join('')}</select><input id="outage-code" class="filter-input" placeholder="Mã BTS"><span class="table-summary" id="outage-count">${filtered.length} dòng</span></div>
+    <div class="filters"><span class="filter-label">Lọc theo</span><select id="outage-date" class="filter-select"><option value="">Tất cả ngày</option>${days.map(day => `<option value="${esc(day)}">${new Date(`${day}T00:00:00`).toLocaleDateString('vi-VN')}</option>`).join('')}</select><select id="outage-ward" class="filter-select"><option value="">Tất cả phường/xã</option>${wards.map(ward => `<option value="${esc(ward)}">${esc(ward)}</option>`).join('')}</select><input id="outage-code" class="filter-input" placeholder="Mã BTS / mã khách hàng"><span class="table-summary" id="outage-count">${filtered.length} dòng</span></div>
     <section class="panel"><div class="table-wrap"><table><thead><tr><th>MÃ BTS / TÊN TRẠM</th><th>KHU VỰC</th><th>ĐƯỜNG / PHẠM VI BỊ ẢNH HƯỞNG</th><th>NGÀY</th><th>BẮT ĐẦU</th><th>KẾT THÚC DỰ KIẾN</th><th>LÝ DO</th><th>MỨC ĐỘ XÁC NHẬN</th><th>NGUỒN DỮ LIỆU</th></tr></thead><tbody id="outage-rows">${outageTableRows(filtered, state.matches)}</tbody></table>${filtered.length ? '' : '<div class="empty-state">Không có lịch khớp bộ lọc hoặc chưa có lịch được nhập.</div>'}</div></section>`;
 }
 
@@ -202,20 +224,21 @@ function renderAffected() {
     const status = $('#match-filter')?.value || '';
     const ward = $('#affected-ward')?.value || '';
     const code = ($('#affected-code')?.value || '').trim().toLowerCase();
-    return (!status || item.status === status) && (!ward || item.station.ward === ward) &&
-      (!code || item.station.code.toLowerCase().includes(code));
+    return inSelectedPeriod(item.outage) && (!status || item.status === status) && (!ward || item.station.ward === ward) &&
+      (!code || [item.station.code, item.station.customer_code].some(value => String(value || '').toLowerCase().includes(code)));
   });
   const wards = [...new Set(state.stations.map(item => item.ward).filter(Boolean))].sort();
   const rows = filtered.map(item => `<tr>
-    <td class="code">${esc(item.station.code)}</td><td class="cell-primary">${esc(item.station.name)}</td>
+    <td class="code">${esc(item.station.code)}<span class="cell-secondary">Mã KH: ${esc(item.station.customer_code || 'Chưa có')}</span></td><td class="cell-primary">${esc(item.station.name)}</td>
     <td>${esc(item.station.ward || item.outage.ward || '—')}</td>
     <td title="${esc(item.outage.affected_scope)}">${esc(item.outage.affected_scope)}</td>
     <td class="nowrap">${localDay(item.outage.start_at)}<span class="cell-secondary">${timeOnly(item.outage.start_at)}–${timeOnly(item.outage.end_at)}</span></td>
     <td>${matchBadge(item.status)}<span class="cell-secondary">${esc(item.reason)}</span></td><td>${esc(item.outage.source)}</td>
   </tr>`).join('');
-  return `${pageHeading('Trạm BTS bị ảnh hưởng', 'Chỉ hiển thị cặp trạm/lịch có dấu hiệu địa lý liên quan; tên đường trùng riêng lẻ không được coi là xác nhận.', '')}
+  const periodActions = `<button class="button ${state.outagePeriod === 'today' ? 'button-primary' : 'button-secondary'}" data-action="scan-period" data-period="today">Cập nhật hôm nay</button><button class="button ${state.outagePeriod === 'week' ? 'button-primary' : 'button-secondary'}" data-action="scan-period" data-period="week">Cập nhật tuần này</button>`;
+  return `${pageHeading('Trạm BTS bị ảnh hưởng', 'Cập nhật nguồn lịch được phép và lọc trạm theo ngày/tuần; tìm được cả bằng mã BTS hoặc mã khách hàng. Tên đường trùng riêng lẻ không phải xác nhận.', periodActions)}
     ${!state.outages.length ? '<div class="inline-alert info"><span>ⓘ</span><div>Chưa có lịch để đối chiếu. Nhập dữ liệu từ nguồn EVNSPC trước khi kết luận trạm bị ảnh hưởng.</div></div>' : ''}
-    <div class="filters"><select id="match-filter" class="filter-select"><option value="">Tất cả mức độ</option><option value="confirmed">Đã xác nhận</option><option value="area">Khớp khu vực</option><option value="needs_review">Cần kiểm tra</option><option value="not_affected">Không bị ảnh hưởng</option></select><select id="affected-ward" class="filter-select"><option value="">Tất cả phường/xã</option>${wards.map(ward => `<option value="${esc(ward)}">${esc(ward)}</option>`).join('')}</select><input id="affected-code" class="filter-input" placeholder="Mã BTS"><span class="table-summary" id="affected-count">${filtered.length} kết quả</span></div>
+    <div class="filters"><select id="match-filter" class="filter-select"><option value="">Tất cả mức độ</option><option value="confirmed">Đã xác nhận</option><option value="area">Khớp khu vực</option><option value="needs_review">Cần kiểm tra</option><option value="not_affected">Không bị ảnh hưởng</option></select><select id="affected-ward" class="filter-select"><option value="">Tất cả phường/xã</option>${wards.map(ward => `<option value="${esc(ward)}">${esc(ward)}</option>`).join('')}</select><input id="affected-code" class="filter-input" placeholder="Mã BTS / mã khách hàng"><span class="table-summary" id="affected-count">${filtered.length} kết quả</span></div>
     <section class="panel"><div class="table-wrap"><table><thead><tr><th>MÃ BTS</th><th>TÊN TRẠM</th><th>KHU VỰC</th><th>PHẠM VI NGUYÊN VĂN</th><th>THỜI GIAN</th><th>ĐỐI CHIẾU</th><th>NGUỒN</th></tr></thead><tbody id="affected-rows">${rows}</tbody></table>${filtered.length ? '' : `<div class="empty-state">${state.outages.length ? 'Chưa có trạm nào đủ thông tin để ghép với các lịch hiện tại.' : 'Chưa có dữ liệu lịch cúp điện.'}</div>`}</div></section>`;
 }
 
@@ -306,8 +329,9 @@ function updateOutageTable() {
   const date = $('#outage-date')?.value || '';
   const ward = $('#outage-ward')?.value || '';
   const code = ($('#outage-code')?.value || '').trim().toLowerCase();
-  const filtered = state.outages.filter(outage => (!date || outage.start_at.slice(0, 10) === date) && (!ward || outage.ward === ward) &&
-    (!code || state.matches.some(item => item.outage.id === outage.id && item.station.code.toLowerCase().includes(code))));
+  const filtered = state.outages.filter(outage => inSelectedPeriod(outage) && (!date || outage.start_at.slice(0, 10) === date) && (!ward || outage.ward === ward) &&
+    (!code || state.matches.some(item => item.outage.id === outage.id &&
+      [item.station.code, item.station.customer_code].some(value => String(value || '').toLowerCase().includes(code)))));
   $('#outage-rows').innerHTML = outageTableRows(filtered, state.matches) || '<tr><td colspan="9" class="empty-state">Không có lịch phù hợp.</td></tr>';
   $('#outage-count').textContent = `${filtered.length} dòng`;
 }
@@ -316,8 +340,8 @@ function updateAffectedTable() {
   const status = $('#match-filter')?.value || '';
   const ward = $('#affected-ward')?.value || '';
   const code = ($('#affected-code')?.value || '').trim().toLowerCase();
-  const filtered = state.matches.filter(item => (!status || item.status === status) && (!ward || item.station.ward === ward) &&
-    (!code || item.station.code.toLowerCase().includes(code)));
+  const filtered = state.matches.filter(item => inSelectedPeriod(item.outage) && (!status || item.status === status) && (!ward || item.station.ward === ward) &&
+    (!code || [item.station.code, item.station.customer_code].some(value => String(value || '').toLowerCase().includes(code))));
   const rows = filtered.map(item => `<tr><td class="code">${esc(item.station.code)}</td><td class="cell-primary">${esc(item.station.name)}</td><td>${esc(item.station.ward || item.outage.ward || '—')}</td><td title="${esc(item.outage.affected_scope)}">${esc(item.outage.affected_scope)}</td><td class="nowrap">${localDay(item.outage.start_at)}<span class="cell-secondary">${timeOnly(item.outage.start_at)}–${timeOnly(item.outage.end_at)}</span></td><td>${matchBadge(item.status)}<span class="cell-secondary">${esc(item.reason)}</span></td><td>${esc(item.outage.source)}</td></tr>`).join('');
   $('#affected-rows').innerHTML = rows || '<tr><td colspan="7" class="empty-state">Chưa có trạm nào đủ thông tin để ghép với lịch hiện tại.</td></tr>';
   $('#affected-count').textContent = `${filtered.length} kết quả`;
@@ -370,13 +394,18 @@ function downloadTemplate() {
     ['Ngày cúp điện', 'Giờ bắt đầu', 'Giờ kết thúc', 'Phạm vi ảnh hưởng', 'Phường/xã', 'Đường bị ảnh hưởng', 'Lý do', 'Nguồn dữ liệu'], []);
 }
 
-async function refreshNow() {
-  toast('Đang kiểm tra nguồn lịch...');
+async function refreshNow(period = '') {
+  if (period === 'today' || period === 'week') {
+    state.outagePeriod = period;
+    const dateFilter = $('#outage-date');
+    if (dateFilter) dateFilter.value = '';
+  }
+  toast(period ? `Đang cập nhật nguồn lịch cho ${period === 'today' ? 'hôm nay' : 'tuần này'}...` : 'Đang kiểm tra nguồn lịch...');
   try {
     const result = await api('/api/refresh', { method: 'POST' });
     await loadData();
     renderPage();
-    toast(`Đã đồng bộ ${result.count} lịch (${result.added} mới, ${result.changed} thay đổi, ${result.cancelled} hủy).`);
+    toast(`Đã cập nhật ${result.count} lịch (${result.added} mới, ${result.changed} thay đổi, ${result.cancelled} hủy).`);
   } catch (error) {
     await loadData().catch(() => {});
     renderPage();
@@ -415,6 +444,7 @@ document.addEventListener('click', async event => {
     if (action === 'import-stations') importFile('stations');
     if (action === 'import-outages') importFile('outages');
     if (action === 'refresh') refreshNow();
+    if (action === 'scan-period') refreshNow(actionButton.dataset.period);
     if (action === 'download-template') downloadTemplate();
     if (action === 'copy-customer') {
       try {

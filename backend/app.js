@@ -15,6 +15,14 @@ function nowIso() {
   return new Date().toISOString();
 }
 
+function dateKeyInVietnam(date) {
+  const parts = new Intl.DateTimeFormat('en', {
+    timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit'
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
 function getStation(code) {
   return db.prepare('SELECT * FROM stations WHERE code = ?').get(code);
 }
@@ -70,7 +78,7 @@ app.get('/api/summary', (_req, res) => {
   const matches = buildMatches(outages);
   const unique = status => new Set(matches.filter(item => item.status === status).map(item => item.station.code)).size;
   const scheduled = new Set(matches.filter(item => ['confirmed', 'area'].includes(item.status)).map(item => item.station.code));
-  const today = nowIso().slice(0, 10);
+  const today = dateKeyInVietnam(new Date());
   const activeMatches = matches.filter(item => item.status === 'confirmed' && item.outage.start_at <= nowIso() && item.outage.end_at >= nowIso());
   res.json({
     stationCount: stations,
