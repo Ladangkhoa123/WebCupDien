@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#071322">
+  <title>BTS Power Monitor | Đồng Nai</title>
+  <link rel="preconnect" href="https://tile.openstreetmap.org">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <a class="brand" href="#" data-page="overview">
+        <span class="brand-mark">⚡</span>
+        <span><b>POWER<span class="brand-accent">WATCH</span></b><small>ĐỒNG NAI · NOC</small></span>
+      </a>
+      <div class="nav-caption">GIÁM SÁT</div>
+      <nav class="main-nav" aria-label="Điều hướng chính">
+        <button class="nav-item active" data-page="overview"><span>◫</span>Tổng quan</button>
+        <button class="nav-item" data-page="stations"><span>⌁</span>Danh sách BTS</button>
+        <button class="nav-item" data-page="outages"><span>◷</span>Lịch cúp điện 7 ngày</button>
+        <button class="nav-item" data-page="affected"><span>◉</span>Trạm BTS bị ảnh hưởng</button>
+        <button class="nav-item" data-page="map"><span>⌖</span>Bản đồ trạm BTS</button>
+      </nav>
+      <div class="nav-caption nav-caption-lower">HỆ THỐNG</div>
+      <nav class="main-nav" aria-label="Quản lý">
+        <button class="nav-item" data-page="history"><span>↻</span>Lịch sử cập nhật</button>
+        <button class="nav-item" data-page="data"><span>▤</span>Quản lý dữ liệu</button>
+      </nav>
+      <div class="sidebar-bottom">
+        <span class="live-dot"></span>
+        <span><b>GIÁM SÁT HỆ THỐNG</b><small id="sidebar-state">Đang kết nối...</small></span>
+      </div>
+    </aside>
+
+    <main class="main-area">
+      <header class="topbar">
+        <div><div class="eyebrow">TRUNG TÂM ĐIỀU HÀNH · ĐỒNG NAI</div><h1 id="page-title">Tổng quan</h1></div>
+        <div class="topbar-right">
+          <div class="updated-label"><span class="live-dot"></span><span id="last-updated">Chưa có lần đồng bộ thành công</span></div>
+          <button class="icon-button" id="alerts-button" aria-label="Mở cảnh báo">♧<span class="notification-dot" id="notification-dot" hidden></span></button>
+          <div class="user-chip"><span class="avatar">KT</span><span><b>Kỹ thuật viên</b><small>Điều hành mạng</small></span></div>
+        </div>
+      </header>
+      <section id="alert-drawer" class="alert-drawer" hidden></section>
+      <section id="page-content" class="page-content" aria-live="polite"></section>
+    </main>
+  </div>
+
+  <dialog id="station-dialog">
+    <form id="station-form" class="station-form">
+      <div class="dialog-heading"><div><div class="eyebrow">HỒ SƠ TRẠM</div><h2 id="station-dialog-title">Thêm trạm BTS</h2></div><button type="button" class="close-button" data-close-dialog aria-label="Đóng">×</button></div>
+      <div class="form-grid">
+        <label>Mã trạm BTS *<input name="code" required maxlength="40" placeholder="BHO001"></label>
+        <label>Tên trạm BTS *<input name="name" required placeholder="Tên/gợi nhớ trạm"></label>
+        <label>Mã khách hàng / mã công tơ<input name="customer_code" placeholder="Mã trên hóa đơn điện"></label>
+        <label>Tỉnh/thành phố<input name="province" value="Đồng Nai"></label>
+        <label>Phường/xã<input name="ward" placeholder="Nhập theo thông báo điện"></label>
+        <label>Tên đường<input name="street"></label>
+        <label>Đơn vị quản lý<input name="management_unit"></label>
+        <label class="full-field">Địa chỉ chi tiết<input name="address"></label>
+        <label>Vĩ độ<input name="latitude" type="number" step="any"></label>
+        <label>Kinh độ<input name="longitude" type="number" step="any"></label>
+        <label class="full-field">Ghi chú<textarea name="notes" rows="3"></textarea></label>
+      </div>
+      <div class="dialog-actions"><button type="button" class="button button-muted" data-close-dialog>Hủy</button><button class="button button-primary" type="submit">Lưu trạm</button></div>
+    </form>
+  </dialog>
+  <div id="toast" class="toast" role="status" hidden></div>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="/app.js" defer></script>
+</body>
+</html>

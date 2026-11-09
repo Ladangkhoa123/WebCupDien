@@ -1,0 +1,23 @@
+{
+  "name": "bts-power-monitor-dong-nai",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Theo doi lich ngung cung cap dien va doi chieu voi danh sach tram BTS Dong Nai",
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "scripts": {
+    "start": "node backend/server.js",
+    "dev": "node --watch backend/server.js",
+    "import:stations": "node backend/import-workbook.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "exceljs": "^4.4.0",
+    "express": "^5.1.0",
+    "node-cron": "^4.2.1"
+  },
+  "overrides": {
+    "uuid": "^11.1.1"
+  }
+}
