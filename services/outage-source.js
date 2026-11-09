@@ -5,12 +5,12 @@ function field(record, ...names) {
   return '';
 }
 
-async function fetchPublicOutages() {
-  const endpoint = String(process.env.EVNSPC_PUBLIC_API_URL || '').trim();
-  if (!endpoint) {
-    throw new Error('Chưa cấu hình API JSON công khai được EVNSPC cho phép. Hãy nhập lịch từ Excel/CSV; hệ thống không tự đọc hoặc vượt cơ chế bảo vệ trên website.');
+async function fetchPublicOutages({ endpoint = process.env.EVNSPC_PUBLIC_API_URL, fetchImpl = fetch } = {}) {
+  const configuredEndpoint = String(endpoint || '').trim();
+  if (!configuredEndpoint) {
+    throw new Error('Chưa kết nối nguồn dữ liệu tự động. Chỉ đồng bộ khi đã cấu hình API EVNSPC được cấp phép; hãy nhập lịch bằng Excel/CSV.');
   }
-  const url = new URL(endpoint);
+  const url = new URL(configuredEndpoint);
   if (url.protocol !== 'https:' && url.hostname !== 'localhost' && url.hostname !== '127.0.0.1') {
     throw new Error('API lịch điện phải sử dụng HTTPS.');
   }
@@ -18,9 +18,10 @@ async function fetchPublicOutages() {
   const timeout = setTimeout(() => controller.abort(), 15000);
   let response;
   try {
-    response = await fetch(url, {
+    response = await fetchImpl(url, {
       method: 'GET',
       headers: { Accept: 'application/json' },
+      redirect: 'error',
       signal: controller.signal
     });
   } finally {
@@ -36,10 +37,11 @@ async function fetchPublicOutages() {
     date: field(item, 'date', 'eventDate'),
     startAt: field(item, 'startAt', 'start_at'),
     endAt: field(item, 'endAt', 'end_at'),
-    affectedScope: field(item, 'affectedScope', 'affected_scope', 'scope'),
+    affectedScope: field(item, 'affectedScope', 'affected_scope', 'scope', 'location'),
     province: field(item, 'province') || 'Đồng Nai',
     ward: field(item, 'ward'),
     street: field(item, 'street'),
+    utility_unit: field(item, 'utility_unit', 'utilityUnit', 'power_company'),
     cause: field(item, 'cause'),
     source_url: field(item, 'sourceUrl', 'source_url')
   }));

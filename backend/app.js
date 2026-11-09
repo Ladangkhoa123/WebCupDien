@@ -2,25 +2,18 @@ const path = require('node:path');
 const express = require('express');
 const db = require('./db');
 const { classifyMatch } = require('./matching');
-const { importOutages, importStations, workbookRows } = require('./import-data');
+const { importOutages, importStations, previewOutages, workbookRows } = require('./import-data');
 const { createUpcomingAlerts, refreshOutages } = require('./refresh');
+const { vietnamLocalDateTime } = require('./time');
 
 const app = express();
 const frontendPath = path.join(__dirname, '..', 'frontend');
 app.disable('x-powered-by');
-app.use(express.json({ limit: '1mb' }));
+app.use(express.json({ limit: '15mb' }));
 app.use(express.static(frontendPath));
 
 function nowIso() {
   return new Date().toISOString();
-}
-
-function dateKeyInVietnam(date) {
-  const parts = new Intl.DateTimeFormat('en', {
-    timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit'
-  }).formatToParts(date);
-  const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
-  return `${values.year}-${values.month}-${values.day}`;
 }
 
 function getStation(code) {
@@ -54,15 +47,29 @@ function buildMatches(outages) {
   for (const outage of outages) {
     for (const station of stations) {
       const match = classifyMatch(station, outage);
-      if (match) matches.push({ ...match, station, outage });
+      if (match) {
+        const review = db.prepare(`
+          SELECT status, note, reviewed_at FROM match_reviews
+          WHERE outage_id = ? AND station_code = ?
+        `).get(outage.id, station.code);
+        matches.push({
+          ...match,
+          status: review?.status || match.status,
+          autoStatus: match.status,
+          reviewed: Boolean(review),
+          review: review || null,
+          station,
+          outage
+        });
+      }
     }
   }
   return matches;
 }
 
 function getOutages({ includeCancelled = false } = {}) {
-  const now = nowIso();
-  const upper = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+  const now = vietnamLocalDateTime();
+  const upper = vietnamLocalDateTime(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000));
   const statusFilter = includeCancelled ? '' : "AND status = 'scheduled'";
   return db.prepare(`
     SELECT * FROM outages WHERE start_at <= ? AND end_at >= ? ${statusFilter}
@@ -78,8 +85,15 @@ app.get('/api/summary', (_req, res) => {
   const matches = buildMatches(outages);
   const unique = status => new Set(matches.filter(item => item.status === status).map(item => item.station.code)).size;
   const scheduled = new Set(matches.filter(item => ['confirmed', 'area'].includes(item.status)).map(item => item.station.code));
-  const today = dateKeyInVietnam(new Date());
-  const activeMatches = matches.filter(item => item.status === 'confirmed' && item.outage.start_at <= nowIso() && item.outage.end_at >= nowIso());
+  const today = vietnamLocalDateTime().slice(0, 10);
+  const now = vietnamLocalDateTime();
+  const activeMatches = matches.filter(item => item.status === 'confirmed' && item.outage.start_at <= now && item.outage.end_at >= now);
+  const latestRefresh = db.prepare(`
+    SELECT status, message FROM update_history
+    WHERE kind = 'automatic_refresh'
+    ORDER BY id DESC LIMIT 1
+  `).get();
+  const automaticSourceConnected = Boolean(String(process.env.EVNSPC_PUBLIC_API_URL || '').trim());
   res.json({
     stationCount: stations,
     scheduledCount: scheduled.size,
@@ -89,7 +103,9 @@ app.get('/api/summary', (_req, res) => {
     lastCheckedAt: db.prepare("SELECT value FROM app_meta WHERE key = 'last_checked_at'").get()?.value || null,
     lastDataUpdateAt: db.prepare("SELECT value FROM app_meta WHERE key = 'last_data_update_at'").get()?.value || null,
     lastSuccessAt: db.prepare("SELECT value FROM app_meta WHERE key = 'last_success_at'").get()?.value || null,
-    publicApiConfigured: Boolean(process.env.EVNSPC_PUBLIC_API_URL)
+    automaticSourceConnected,
+    outageSourceName: 'EVNSPC',
+    sourceError: automaticSourceConnected && latestRefresh?.status === 'error' ? latestRefresh.message : null
   });
 });
 
@@ -133,6 +149,9 @@ app.put('/api/stations/:code', (req, res) => {
     if (!previous) return res.status(404).json({ error: 'Không tìm thấy trạm.' });
     const station = stationPayload({ ...req.body, code: req.params.code });
     const now = nowIso();
+    if (['name', 'province', 'ward', 'street', 'address'].some(key => previous[key] !== station[key])) {
+      db.prepare('DELETE FROM match_reviews WHERE station_code = ?').run(station.code);
+    }
     db.prepare(`
       UPDATE stations SET name=?, customer_code=?, province=?, ward=?, street=?, address=?, management_unit=?, notes=?,
         latitude=?, longitude=?, updated_at=? WHERE code=?
@@ -175,14 +194,105 @@ app.get('/api/affected', (_req, res) => {
   res.json(buildMatches(outages));
 });
 
-app.post('/api/import/outages', express.raw({ type: '*/*', limit: '10mb' }), async (req, res) => {
+app.post('/api/outages/manual', (req, res) => {
+  try {
+    const result = importOutages([req.body], 'Nhập thủ công');
+    return res.status(201).json(result);
+  } catch (error) {
+    return res.status(400).json({ error: error.message });
+  }
+});
+
+app.post('/api/import/outages/preview', express.raw({ type: '*/*', limit: '10mb' }), async (req, res) => {
   try {
     const filename = String(req.query.filename || 'outages.xlsx');
     const rows = await workbookRows(req.body, filename);
-    res.json(importOutages(rows, filename));
+    return res.json({ filename: path.basename(filename), ...previewOutages(rows) });
   } catch (error) {
-    res.status(400).json({ error: error.message });
+    return res.status(400).json({ error: error.message });
   }
+});
+
+app.post('/api/import/outages/confirm', (req, res) => {
+  try {
+    const records = req.body?.records;
+    if (!Array.isArray(records) || !records.length || records.length > 10000) {
+      throw new Error('Không có lịch hợp lệ để xác nhận nhập.');
+    }
+    const rows = records.map(record => ({
+      'ID lịch': record.id,
+      'Ngày cúp điện': record.date,
+      'Giờ bắt đầu': record.start_at,
+      'Giờ kết thúc': record.end_at,
+      'Phạm vi ảnh hưởng': record.affected_scope,
+      'Tỉnh/thành phố': record.province,
+      'Phường/xã': record.ward,
+      'Đường bị ảnh hưởng': record.street,
+      'Đơn vị điện lực': record.utility_unit,
+      'Lý do': record.cause,
+      'Nguồn dữ liệu': record.source_url
+    }));
+    return res.json(importOutages(rows, 'Excel/CSV'));
+  } catch (error) {
+    return res.status(400).json({ error: error.message });
+  }
+});
+
+app.get('/api/templates/outages.xlsx', async (_req, res, next) => {
+  try {
+    const ExcelJS = require('exceljs');
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet('Lịch cúp điện');
+    sheet.columns = [
+      { header: 'ID lịch', key: 'id', width: 20 },
+      { header: 'Ngày cúp điện', key: 'date', width: 18 },
+      { header: 'Giờ bắt đầu', key: 'start', width: 16 },
+      { header: 'Giờ kết thúc', key: 'end', width: 16 },
+      { header: 'Địa điểm', key: 'location', width: 40 },
+      { header: 'Phạm vi ảnh hưởng', key: 'scope', width: 40 },
+      { header: 'Đường bị ảnh hưởng', key: 'street', width: 28 },
+      { header: 'Phường/xã', key: 'ward', width: 24 },
+      { header: 'Đơn vị điện lực', key: 'utility_unit', width: 24 },
+      { header: 'Lý do', key: 'cause', width: 32 },
+      { header: 'Nguồn dữ liệu', key: 'source_url', width: 40 }
+    ];
+    sheet.getRow(1).font = { bold: true };
+    sheet.views = [{ state: 'frozen', ySplit: 1 }];
+    const buffer = await workbook.xlsx.writeBuffer();
+    res.set({
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': 'attachment; filename="mau-lich-cup-dien.xlsx"'
+    });
+    return res.send(Buffer.from(buffer));
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.post('/api/matches/:outageId/:stationCode/review', (req, res) => {
+  const outageId = Number(req.params.outageId);
+  const stationCode = String(req.params.stationCode || '');
+  const status = String(req.body?.status || '');
+  const note = String(req.body?.note || '').trim().slice(0, 1000);
+  if (!Number.isSafeInteger(outageId) || !['confirmed', 'not_affected'].includes(status)) {
+    return res.status(400).json({ error: 'Trạng thái xác minh không hợp lệ.' });
+  }
+  const outage = db.prepare('SELECT * FROM outages WHERE id = ?').get(outageId);
+  const station = getStation(stationCode);
+  if (!outage || !station) return res.status(404).json({ error: 'Không tìm thấy lịch hoặc trạm BTS.' });
+  if (!classifyMatch(station, outage)) {
+    return res.status(400).json({ error: 'Lịch này không có thông tin trùng khớp để xác minh cho trạm đã chọn.' });
+  }
+  const reviewedAt = nowIso();
+  db.prepare(`
+    INSERT INTO match_reviews (outage_id, station_code, status, note, reviewed_at)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(outage_id, station_code) DO UPDATE SET
+      status=excluded.status, note=excluded.note, reviewed_at=excluded.reviewed_at
+  `).run(outageId, stationCode, status, note, reviewedAt);
+  db.prepare('INSERT INTO update_history (kind, status, message, created_at) VALUES (?, ?, ?, ?)')
+    .run('match_review', 'success', `${stationCode}: ${status === 'confirmed' ? 'đã xác nhận có nguy cơ ảnh hưởng' : 'đã xác minh không bị ảnh hưởng'} tại lịch ${outageId}.`, reviewedAt);
+  return res.json({ outageId, stationCode, status, note, reviewed_at: reviewedAt });
 });
 
 app.post('/api/refresh', async (_req, res) => {

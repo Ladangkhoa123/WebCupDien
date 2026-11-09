@@ -20,6 +20,7 @@
       <nav class="main-nav" aria-label="Điều hướng chính">
         <button class="nav-item active" data-page="overview"><span>◫</span>Tổng quan</button>
         <button class="nav-item" data-page="stations"><span>⌁</span>Danh sách BTS</button>
+        <button class="nav-item" data-page="btsOutages"><span>⚡</span>Lịch cúp điện BTS</button>
         <button class="nav-item" data-page="outages"><span>◷</span>Lịch cúp điện 7 ngày</button>
         <button class="nav-item" data-page="affected"><span>◉</span>Trạm BTS bị ảnh hưởng</button>
         <button class="nav-item" data-page="map"><span>⌖</span>Bản đồ trạm BTS</button>
@@ -67,6 +68,30 @@
       </div>
       <div class="dialog-actions"><button type="button" class="button button-muted" data-close-dialog>Hủy</button><button class="button button-primary" type="submit">Lưu trạm</button></div>
     </form>
+  </dialog>
+  <dialog id="outage-dialog">
+    <form id="outage-form" class="station-form">
+      <div class="dialog-heading"><div><div class="eyebrow">NHẬP TỪ THÔNG BÁO</div><h2>Thêm lịch cúp điện</h2></div><button type="button" class="close-button" data-close-dialog aria-label="Đóng">×</button></div>
+      <div class="form-grid">
+        <label>Ngày cúp điện *<input name="date" type="date" required></label>
+        <label>Phường/xã<input name="ward" placeholder="Theo thông báo"></label>
+        <label>Giờ bắt đầu *<input name="start_at" type="time" required></label>
+        <label>Giờ kết thúc *<input name="end_at" type="time" required></label>
+        <label>Đường bị ảnh hưởng<input name="street"></label>
+        <label>Lý do<input name="cause"></label>
+        <label class="full-field">Phạm vi ảnh hưởng nguyên văn *<textarea name="affected_scope" rows="3" required placeholder="Chép đúng phạm vi được nêu trong thông báo"></textarea></label>
+        <input type="hidden" name="province" value="Đồng Nai">
+      </div>
+      <div class="inline-alert info"><span>ⓘ</span><div>Ghi lịch từ nguồn chính thức; hệ thống lưu dưới dạng nhập thủ công, không coi đây là đồng bộ API.</div></div>
+      <div class="dialog-actions"><button type="button" class="button button-muted" data-close-dialog>Hủy</button><button class="button button-primary" type="submit">Lưu lịch</button></div>
+    </form>
+  </dialog>
+  <dialog id="import-preview-dialog" class="import-preview-dialog">
+    <div class="station-form">
+      <div class="dialog-heading"><div><div class="eyebrow">KIỂM TRA TRƯỚC KHI LƯU</div><h2>Xem trước lịch cúp điện</h2></div><button type="button" class="close-button" data-close-dialog aria-label="Đóng">×</button></div>
+      <div id="import-preview-content" class="import-preview-content"></div>
+      <div class="dialog-actions"><button type="button" class="button button-muted" data-close-dialog>Hủy</button><button type="button" class="button button-primary" id="confirm-outage-import" data-action="confirm-outage-import">Xác nhận nhập</button></div>
+    </div>
   </dialog>
   <div id="toast" class="toast" role="status" hidden></div>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>

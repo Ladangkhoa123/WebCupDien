@@ -58,6 +58,14 @@ db.exec(`
     created_at TEXT NOT NULL,
     read_at TEXT
   );
+  CREATE TABLE IF NOT EXISTS match_reviews (
+    outage_id INTEGER NOT NULL REFERENCES outages(id) ON DELETE CASCADE,
+    station_code TEXT NOT NULL REFERENCES stations(code) ON DELETE CASCADE,
+    status TEXT NOT NULL CHECK (status IN ('confirmed', 'not_affected')),
+    note TEXT NOT NULL DEFAULT '',
+    reviewed_at TEXT NOT NULL,
+    PRIMARY KEY (outage_id, station_code)
+  );
   CREATE TABLE IF NOT EXISTS app_meta (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
@@ -70,6 +78,10 @@ db.exec(`
 const stationColumns = new Set(db.prepare('PRAGMA table_info(stations)').all().map(column => column.name));
 if (!stationColumns.has('customer_code')) {
   db.exec("ALTER TABLE stations ADD COLUMN customer_code TEXT NOT NULL DEFAULT ''");
+}
+const outageColumns = new Set(db.prepare('PRAGMA table_info(outages)').all().map(column => column.name));
+if (!outageColumns.has('utility_unit')) {
+  db.exec("ALTER TABLE outages ADD COLUMN utility_unit TEXT NOT NULL DEFAULT ''");
 }
 db.exec(`
   UPDATE stations
